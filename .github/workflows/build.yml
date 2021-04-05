@@ -30,22 +30,22 @@ jobs:
       uses: actions/checkout@v2
       with:
         repository: TorrentDam/torrents
-        ref: metadata
-        path: metadata
+        ref: master
+        path: torrents
         token: ${{ secrets.BOT_ACCESS_TOKEN }}
 
     - name: Discover
       run: java --class-path ../master/out/jobs/assembly/dest/out.jar Discover
-      working-directory: ./metadata
+      working-directory: ./torrents
 
     - name: Index
       run: java --class-path ../master/out/jobs/assembly/dest/out.jar Index
-      working-directory: ./metadata
+      working-directory: ./torrents
 
     - name: Commit
       uses: stefanzweifel/git-auto-commit-action@v4.4.0
       with:
-        repository: ./metadata
+        repository: ./torrents
         commit_message: Discover
         commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
         commit_author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
