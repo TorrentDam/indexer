@@ -26,18 +26,19 @@ jobs:
       run: ./mill jobs.assembly
       working-directory: ./master
 
-    - name: Checkout
+    - name: Checkout torrents
       uses: actions/checkout@v2
       with:
         repository: TorrentDam/torrents
         ref: metadata
         path: metadata
+        token: ${{ secrets.BOT_ACCESS_TOKEN }}
 
     - name: Discover
       run: java --class-path ../master/out/jobs/assembly/dest/out.jar Discover
       working-directory: ./metadata
 
-    - name: Discover
+    - name: Index
       run: java --class-path ../master/out/jobs/assembly/dest/out.jar Index
       working-directory: ./metadata
 
