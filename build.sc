@@ -20,7 +20,7 @@ object jobs extends ScalaModule {
     ivy"com.lihaoyi::upickle::1.2.2",
   )
   def scalacPluginIvyDeps = Agg(
-    ivy"org.typelevel:::kind-projector:0.11.0",
+    ivy"org.typelevel:::kind-projector:0.11.3",
     ivy"com.olegpy::better-monadic-for:0.3.1",
   )
 }
