@@ -24,6 +24,8 @@ jobs:
 
     - name: Build
       run: ./mill jobs.assembly
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       working-directory: ./master
 
     - name: Checkout torrents
