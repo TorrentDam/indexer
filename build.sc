@@ -2,7 +2,11 @@ import mill._, scalalib._
 import coursier.maven.MavenRepository
 
 object jobs extends ScalaModule {
-  def scalaVersion = "2.13.5"
+  def scalaVersion = "3.0.1"
+  def scalacOptions = Seq(
+    "-source:future",
+    "-Ykind-projector:underscores",
+  )
   def repositoriesTask = T.task {
       super.repositoriesTask() ++ Seq(
         MavenRepository(
@@ -14,13 +18,10 @@ object jobs extends ScalaModule {
       )
   }
   def ivyDeps = Agg(
-    ivy"com.github.torrentdam::bittorrent::0.3.0",
-    ivy"com.github.torrentdam::dht::0.3.0",
-    ivy"com.lihaoyi::os-lib::0.7.1",
-    ivy"com.lihaoyi::upickle::1.2.2",
-  )
-  def scalacPluginIvyDeps = Agg(
-    ivy"org.typelevel:::kind-projector:0.11.3",
-    ivy"com.olegpy::better-monadic-for:0.3.1",
+    ivy"com.github.torrentdam::bittorrent::1.0.0-RC3",
+    ivy"com.github.torrentdam::dht::1.0.0-RC3",
+    ivy"com.lihaoyi::os-lib::0.7.8",
+    ivy"com.lihaoyi::upickle::1.4.0",
+    ivy"ch.qos.logback:logback-classic:1.2.3",
   )
 }

@@ -1,35 +1,32 @@
-import cats.syntax.all._
-import cats.effect._
-import cats.effect.concurrent.Ref
+import cats.syntax.all.*
+import cats.effect.*
+import cats.effect.kernel.Ref
+import cats.effect.std.{Random, Queue}
 import com.github.lavrov.bittorrent.InfoHash
 import com.github.lavrov.bittorrent.wire.{Connection, DownloadMetadata}
 import com.github.lavrov.bittorrent.dht.{Node, NodeId, NodeInfo, PeerDiscovery, QueryHandler, RoutingTable, RoutingTableBootstrap}
 import fs2.Stream
-import fs2.concurrent.Queue
-import fs2.io.tcp.SocketGroup
-import fs2.io.udp.{SocketGroup => UdpSocketGroup}
-import izumi.logstage.api.IzLogger
-import logstage.LogIO
-
-import scala.concurrent.duration._
-import scala.util.Random
-import com.github.lavrov.bittorrent._
+import fs2.io.net.*
+import com.github.lavrov.bittorrent.*
 import com.github.torrentdam.bencode.encode
+import org.typelevel.log4cats.StructuredLogger
+import org.typelevel.log4cats.slf4j.Slf4jLogger
+import scala.concurrent.duration.*
 
 object Discover extends IOApp {
 
-  implicit val logger: LogIO[IO] = LogIO.fromLogger(IzLogger(IzLogger.Level.Info))
+  given logger: StructuredLogger[IO] = Slf4jLogger.getLogger
 
   def run(args: List[String]): IO[ExitCode] =
     components
       .use {
-        case (samples, peerDiscovery, connect) =>
-          discover(
-            samples,
+        case (infoHashSamples, peerDiscovery, connect) =>
+          fetchMetadata(
+            infoHashSamples,
             peerDiscovery,
             connect
           )
-            .evalTap((save _).tupled)
+            .evalTap(save)
             .interruptAfter(10.minutes)
             .compile
             .drain
@@ -42,47 +39,42 @@ object Discover extends IOApp {
 
   def components = {
 
-    val rnd = new Random
-    val selfId: PeerId = PeerId.generate(rnd)
-    val selfNodeId: NodeId = NodeId.generate(rnd)
-
     for {
-      blocker <- Blocker[IO]
-      implicit0(socketGroup: SocketGroup) <- SocketGroup[IO](blocker)
-      implicit0(udpSocketGroup: UdpSocketGroup) <- UdpSocketGroup[IO](blocker)
-      result <- {
+      given Random[IO] <- Resource.eval { Random.scalaUtilRandom[IO] }
+      given SocketGroup[IO] <- Network[IO].socketGroup()
+      given DatagramSocketGroup[IO] <- Network[IO].datagramSocketGroup()
+      selfId <- Resource.eval { PeerId.generate[IO] }
+      selfNodeId <- Resource.eval { NodeId.generate[IO] }
+      (routingTable, dhtNode) <- {
         for {
-          routingTable <- Resource.liftF { RoutingTable[IO](selfNodeId) }
+          routingTable <- Resource.eval { RoutingTable[IO](selfNodeId) }
           queryHandler <- Resource.pure[IO, QueryHandler[IO]] { QueryHandler(selfNodeId, routingTable) }
-          node <- Node[IO](selfNodeId, 0, queryHandler)
-          seedNode <- Resource.liftF { RoutingTableBootstrap.resolveSeedNode(node.client) }
-          _ <- Resource.liftF { routingTable.insert(seedNode) }
-        } yield (routingTable, node, seedNode)
+          node <- Node[IO](selfNodeId, queryHandler)
+          _ <- Resource.eval { RoutingTableBootstrap(routingTable, node.client) }
+        } yield (routingTable, node)
       }
-      (routingTable, dhtNode, seedNode) = result
       peerDiscovery <- PeerDiscovery.make[IO](routingTable, dhtNode.client)
       connect = { (infoHash: InfoHash, peerInfo: PeerInfo) =>
         Connection.connect[IO](selfId, peerInfo, infoHash)
       }
-      samples = infoHashSamples(seedNode)
+      samples = infoHashSamples(routingTable)
     } yield (samples, peerDiscovery, connect)
   }
 
-  def infoHashSamples(seedNode: NodeInfo)(implicit
-      socketGroup: UdpSocketGroup,
+  def infoHashSamples(masterTable: RoutingTable[IO])(
+    using
+    DatagramSocketGroup[IO],
+    Random[IO]
   ): Stream[IO, InfoHash] = {
 
-    val randomNodeId = {
-      val rnd = new Random
-      IO { NodeId.generate(rnd) }
-    }
+    val randomNodeId = NodeId.generate[IO]
 
     def spawn(reportInfoHash: InfoHash => IO[Unit]): IO[Unit] =
       for {
         nodeId <- randomNodeId
         routingTable <- RoutingTable[IO](nodeId)
         queryHandler <- QueryHandler[IO](nodeId, routingTable).pure[IO]
-        _ <- Node[IO](nodeId, 0, queryHandler).use { node =>
+        _ <- Node[IO](nodeId, queryHandler).use { node =>
           def loop(nodes: List[NodeInfo], visited: Set[NodeInfo]): IO[Unit] = {
             nodes
               .traverse { nodeInfo =>
@@ -104,8 +96,9 @@ object Discover extends IOApp {
                 case nonEmpty => loop(nonEmpty, visited ++ nodes)
               }
           }
-          node.client.findNodes(seedNode, nodeId).flatMap { response =>
-            loop(response.nodes, Set.empty)
+          masterTable.findNodes(nodeId).flatMap { nodes =>
+            logger.info(s"Found nodes ${nodes.toList}") >>
+            loop(nodes.toList, Set.empty)
           }
         }
       } yield ()
@@ -113,17 +106,17 @@ object Discover extends IOApp {
     Stream
       .eval(Queue.unbounded[IO, InfoHash])
       .flatMap { queue =>
-        queue.dequeue.concurrently {
+        Stream.fromQueueUnterminated(queue).concurrently {
           Stream
-            .fixedRate(10.seconds)
+            .fixedRate[IO](10.seconds)
             .parEvalMapUnordered(1) { _ =>
-              spawn(queue.enqueue1).attempt.timeoutTo(10.minutes, IO.unit)
+              spawn(queue.offer).attempt.timeoutTo(10.minutes, IO.unit)
             }
         }
       }
   }
 
-  def discover(
+  def fetchMetadata(
       infoHashes: Stream[IO, InfoHash],
       peerDiscovery: PeerDiscovery[IO],
       connect: (InfoHash, PeerInfo) => Resource[IO, Connection[IO]]
@@ -196,10 +189,7 @@ object Discover extends IOApp {
 
   implicit class ResourceOps[A](self: Resource[IO, A]) {
 
-    def timeout(duration: FiniteDuration)(implicit
-                                          contextShift: ContextShift[IO],
-                                          timer: Timer[IO]
-    ): Resource[IO, A] =
+    def timeout(duration: FiniteDuration): Resource[IO, A] =
       Resource.make(self.allocated.timeout(duration))(_._2).map(_._1)
   }
 }

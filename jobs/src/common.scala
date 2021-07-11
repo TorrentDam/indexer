@@ -1,6 +1,6 @@
 package common
 
-import cats.implicits._
+import cats.implicits.*
 import com.github.lavrov.bittorrent.InfoHash
 import com.github.torrentdam.bencode.decode
 import scodec.bits.ByteVector
@@ -19,13 +19,13 @@ object Metadata {
 
   object extractors {
 
-    import com.github.torrentdam.bencode.format._
+    import com.github.torrentdam.bencode.format.*
 
     val name = field[String]("name")
 
     val files = fieldOptional("files")(
       BencodeFormat.listFormat(
-        (field[List[String]]("path"), field[Long]("length")).imapN(File)(f => (f.path, f.length))
+        (field[List[String]]("path"), field[Long]("length")).imapN(File.apply)(f => (f.path, f.length))
       )
     )
 
@@ -58,7 +58,7 @@ object Metadata {
     )
   }
 
-  import upickle.default._
+  import upickle.default.*
 
   implicit val readWriter: ReadWriter[Metadata] = macroRW
 }
