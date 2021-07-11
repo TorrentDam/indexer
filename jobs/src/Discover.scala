@@ -39,26 +39,26 @@ object Discover extends IOApp {
 
   def components = {
 
-    for {
+    for
       given Random[IO] <- Resource.eval { Random.scalaUtilRandom[IO] }
       given SocketGroup[IO] <- Network[IO].socketGroup()
       given DatagramSocketGroup[IO] <- Network[IO].datagramSocketGroup()
       selfId <- Resource.eval { PeerId.generate[IO] }
       selfNodeId <- Resource.eval { NodeId.generate[IO] }
       (routingTable, dhtNode) <- {
-        for {
+        for
           routingTable <- Resource.eval { RoutingTable[IO](selfNodeId) }
           queryHandler <- Resource.pure[IO, QueryHandler[IO]] { QueryHandler(selfNodeId, routingTable) }
           node <- Node[IO](selfNodeId, queryHandler)
           _ <- Resource.eval { RoutingTableBootstrap(routingTable, node.client) }
-        } yield (routingTable, node)
+        yield (routingTable, node)
       }
       peerDiscovery <- PeerDiscovery.make[IO](routingTable, dhtNode.client)
       connect = { (infoHash: InfoHash, peerInfo: PeerInfo) =>
         Connection.connect[IO](selfId, peerInfo, infoHash)
       }
       samples = infoHashSamples(routingTable)
-    } yield (samples, peerDiscovery, connect)
+    yield (samples, peerDiscovery, connect)
   }
 
   def infoHashSamples(masterTable: RoutingTable[IO])(
@@ -70,12 +70,13 @@ object Discover extends IOApp {
     val randomNodeId = NodeId.generate[IO]
 
     def spawn(reportInfoHash: InfoHash => IO[Unit]): IO[Unit] =
-      for {
+      for
         nodeId <- randomNodeId
         routingTable <- RoutingTable[IO](nodeId)
         queryHandler <- QueryHandler[IO](nodeId, routingTable).pure[IO]
         _ <- Node[IO](nodeId, queryHandler).use { node =>
-          def loop(nodes: List[NodeInfo], visited: Set[NodeInfo]): IO[Unit] = {
+
+          def loop(nodes: List[NodeInfo], visited: Set[NodeInfo]): IO[Unit] =
             nodes
               .traverse { nodeInfo =>
                 node.client
@@ -95,13 +96,13 @@ object Discover extends IOApp {
                 case Nil      => IO.unit
                 case nonEmpty => loop(nonEmpty, visited ++ nodes)
               }
-          }
+          end loop
+
           masterTable.findNodes(nodeId).flatMap { nodes =>
-            logger.info(s"Found nodes ${nodes.toList}") >>
             loop(nodes.toList, Set.empty)
           }
         }
-      } yield ()
+      yield ()
 
     Stream
       .eval(Queue.unbounded[IO, InfoHash])
@@ -176,18 +177,16 @@ object Discover extends IOApp {
 
   def save(infoHash: InfoHash, metadata: TorrentMetadata.Lossless): IO[Unit] = IO {
     val path = paths.torrentPath(infoHash).metadata
-    if (!os.exists(path)) {
+    if !os.exists(path) then
       val bytes = encode(metadata.raw).bytes
-      if (bytes.digest("SHA-1") == infoHash.bytes) {
+      if bytes.digest("SHA-1") == infoHash.bytes then
         val content = common.Metadata.fromTorrentMetadata(infoHash, metadata.parsed)
         val json = upickle.default.write(content, indent = 2)
         os.write(path, json, createFolders = true)
         println(s"Saved into $path")
-      }
-    }
   }
 
-  implicit class ResourceOps[A](self: Resource[IO, A]) {
+  extension [A](self: Resource[IO, A]) {
 
     def timeout(duration: FiniteDuration): Resource[IO, A] =
       Resource.make(self.allocated.timeout(duration))(_._2).map(_._1)

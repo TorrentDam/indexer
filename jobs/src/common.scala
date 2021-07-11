@@ -60,5 +60,5 @@ object Metadata {
 
   import upickle.default.*
 
-  implicit val readWriter: ReadWriter[Metadata] = macroRW
+  given ReadWriter[Metadata] = macroRW
 }
