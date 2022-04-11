@@ -6,6 +6,7 @@ import com.github.torrentdam.bencode.decode
 import scodec.bits.ByteVector
 import com.github.lavrov.bittorrent.TorrentMetadata
 
+
 case class Metadata(
     name: String,
     infoHash: String,

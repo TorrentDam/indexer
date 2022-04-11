@@ -2,14 +2,9 @@ import com.github.lavrov.bittorrent.InfoHash
 import os.Path
 import os.RelPath
 
-object paths extends paths(
-  metadataPath = os.pwd / "metadata",
-  indexPath = os.pwd / "index" / "index.json"
-)
 
-class paths(
-  val metadataPath: os.Path,
-  val indexPath: os.Path
+class Paths(
+  metadataPath: os.Path,
 ) {
 
   def torrentPath(infoHash: InfoHash): TorrentPath = {
