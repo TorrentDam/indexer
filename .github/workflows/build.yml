@@ -39,4 +39,4 @@ jobs:
         file: Dockerfile
         platforms: linux/amd64,linux/arm64
         push: true
-        tags: ghcr.io/torrentdamdev/indexer:latest, ghcr.io/torrentdamdev/indexer:${{ github.sha }}
+        tags: ghcr.io/torrentdam/indexer:latest, ghcr.io/torrentdam/indexer:${{ github.sha }}
