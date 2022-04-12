@@ -1,5 +1,4 @@
 indexer 
 ========
 
-Scripts for DHT network indexing.
-Torrent data is in [metadata branch](https://github.com/TorrentDam/torrents/tree/metadata).
+Randomized search for torrent nodes in DHT network and fetching metadata.
