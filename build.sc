@@ -9,5 +9,6 @@ object indexer extends ScalaModule {
     ivy"com.lihaoyi::os-lib::0.7.8",
     ivy"com.lihaoyi::upickle::1.4.0",
     ivy"ch.qos.logback:logback-classic:1.2.3",
+    ivy"io.nats:jnats:2.14.0",
   )
 }

@@ -1,5 +1,3 @@
-package common
-
 import cats.implicits.*
 import com.github.lavrov.bittorrent.InfoHash
 import com.github.torrentdam.bencode.decode
@@ -9,7 +7,7 @@ import com.github.lavrov.bittorrent.TorrentMetadata
 
 case class Metadata(
     name: String,
-    infoHash: String,
+    infoHash: InfoHash,
     size: Long,
     ext: Set[String]
 )
@@ -51,9 +49,9 @@ object Metadata {
         .filter(supportedExtensions)
         .toSet
     val size = torrentMetadata.files.map(_.length).sum
-    common.Metadata(
+    Metadata(
       name = name,
-      infoHash = infoHash.toString(),
+      infoHash = infoHash,
       size = size,
       ext = fileExtensions,
     )
@@ -61,5 +59,6 @@ object Metadata {
 
   import upickle.default.*
 
-  given ReadWriter[Metadata] = macroRW
+  given Writer[InfoHash] = summon[Writer[String]].comap(_.toHex)
+  given Writer[Metadata] = macroW
 }

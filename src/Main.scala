@@ -22,12 +22,7 @@ object Main extends IOApp {
 
   def run(args: List[String]): IO[ExitCode] =
 
-    val targetDir = args.headOption match
-      case Some(path) => args.foldLeft(os.root)(_ / _)
-      case None => os.pwd / "metadata"
-    val paths = Paths(targetDir)
-
-    components(paths).use { components =>
+    components(args).use { components =>
       import components.*
       
       Stream
@@ -42,15 +37,24 @@ object Main extends IOApp {
             .collect { case (infoHash, Some(metadata)) => (infoHash, metadata) }
         )
         .parJoin(100)
-        .evalTap(save)
+        .mapFilter(verify)
+        .evalTap(write)
         .compile
         .drain
         .as(ExitCode.Success)
     }
 
 
-  def components(paths: Paths) = {
-
+  def components(args: List[String]): Resource[IO, Components] =
+    val output: Resource[IO, Output] = args match
+      case "filesystem" :: path =>
+        val targetDir = path.foldLeft(os.root)(_ / _)
+        val paths = Paths(targetDir)
+        Resource.pure(Output.Filesystem(paths))
+      case "nats" :: url :: Nil =>
+        Output.NatsStream.fromUrl(url)
+      case _ =>
+        Resource.eval(IO.raiseError(Exception("Unsupported output")))
     for
       given Random[IO] <- Resource.eval { Random.scalaUtilRandom[IO] }
       given SocketGroup[IO] <- Network[IO].socketGroup()
@@ -65,15 +69,15 @@ object Main extends IOApp {
       connect = { (infoHash: InfoHash, peerInfo: PeerInfo) =>
         Connection.connect[IO](selfId, peerInfo, infoHash)
       }
-    yield Components(connect, routingTable, node, peerDiscovery, paths)
-  }
+      output <- output
+    yield Components(connect, routingTable, node, peerDiscovery, output)
 
   class Components(
     connect: (InfoHash, PeerInfo) => Resource[IO, Connection[IO]],
     routingTable: RoutingTable[IO],
     node: Node[IO],
     peerDiscovery: PeerDiscovery[IO],
-    paths: Paths
+    output: Output
   )(using
     Random[IO]
   ) {
@@ -171,16 +175,15 @@ object Main extends IOApp {
         }
     }
 
-    def save(infoHash: InfoHash, metadata: TorrentMetadata.Lossless): IO[Unit] = IO {
-      val path = paths.torrentPath(infoHash).metadata
-      if !os.exists(path) then
-        val bytes = encode(metadata.raw).bytes
-        if bytes.digest("SHA-1") == infoHash.bytes then
-          val content = common.Metadata.fromTorrentMetadata(infoHash, metadata.parsed)
-          val json = upickle.default.write(content, indent = 2)
-          os.write(path, json, createFolders = true)
-          println(s"Saved into $path")
-    }
+    def verify(infoHash: InfoHash, metadata: TorrentMetadata.Lossless): Option[Metadata] =
+      val bytes = encode(metadata.raw).bytes
+      if bytes.digest("SHA-1") == infoHash.bytes
+      then
+        Some(Metadata.fromTorrentMetadata(infoHash, metadata.parsed))
+      else
+        None
+
+    def write(metadata: Metadata) = output.write(metadata)
   }
 
   extension [A](self: Resource[IO, A]) {
